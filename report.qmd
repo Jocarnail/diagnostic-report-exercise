@@ -1,0 +1,179 @@
+---
+title: Diagnostic Company S.r.l.
+format: 
+    typst:
+        # keep-typ: true
+        template-partials: 
+            - typst-show.typ
+            - typst-template.typ 
+company-logo: "resources/pexels-edward-jenner-4033151-small.jpg"
+company-address:
+    street: Strada dell'Industria 151
+    city: Trento
+    cap: 38120
+company-contact:
+    phone: "+39 0461 00000000"
+    email: "info@diagnostic.it"
+params:
+    patient_id: 1001
+    exam_id: 102437
+    comment: |
+        Tutti gli easmi sono regolari buoni. Si riscontra un ottima risposta alla terapia.
+        Raccomandiamo un controllo fra mesi 6 (Luglio 2025) per accertare il continuo andamento positivo.
+
+        ## Avvertenza
+        Per favorire l'assorbimento del farmaco XXX evitare cibi e succhi contenenti pompelmo.
+patient:
+    id: 1001
+    name: "Bruno Bianchi"
+    birth-date: "20 Dic 1982"
+report:
+    id: 102437
+    date: "15 Gen 2025"
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+tmp <- Sys.setlocale(locale = "it_IT")
+
+```
+
+<!-- Acquisizione delle informazioni anagrafiche e settaggio dei parametri del template -->
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Import data for patient
+library(tidyverse)
+library(duckplyr)
+library(duckdb)
+con <- dbConnect(duckdb(), "database.duckdb", read_only=TRUE)
+anagrafica <- tbl(con, "patients") |> 
+    filter(id == params$patient_id)
+first_name <- anagrafica |> pull(`first-name`)
+last_name <- anagrafica |> pull(`last-name`)
+birth_date <- anagrafica |> pull(`birth-date`)
+middle_name <- anagrafica |> pull(`middle-name`)
+
+patient_name <- first_name
+if(!is.na(middle_name)){patient_name <- paste(patient_name, middle_name)}
+patient_name <- paste(patient_name, last_name)
+
+library(withr)
+withr::with_locale(c("LC_TIME" = "it_IT"), {
+    birth_date <- parse_date(birth_date, format = "%Y-%m-%d") |> format("%d %b %Y")
+})
+```
+
+---
+patient: 
+    id: "`r params$patient_id`"
+    name: "`r patient_name`"
+    birth-date: "`r birth_date`"
+---
+
+# Commenti del medico competente
+<!-- Quì viene inserito il commento del medico competente in formato markdown -->
+`r params$comment`
+
+# Risultato degli esami
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+exams <- tbl(con, "exams") |> 
+    filter(patient_id == params$patient_id) |> 
+    select(-patient_id) |> 
+    mutate(date = as.Date(date)) |> 
+    left_join(
+        tbl(con, "analysis")
+    ) |> 
+    left_join(tbl(con, "pathogens"))
+
+exam_date <- exams |> filter(exam_id == params$exam_id) |> 
+    pull(date) |> 
+    unique() |> 
+    format("%d %b %Y") 
+```
+
+---
+report:
+    id: "`r params$exam_id`"
+    date: "`r exam_date`"
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#| tbl-colwidths: [1,70,200,70]
+
+library(gt)
+library(gtExtras)
+
+exams |>
+  filter(exam_id == params$exam_id) |>
+  select(pathogen_name, pathogen_id,  value, intervallo_riferimento, date) |>
+  gt(
+  ) |>
+  cols_label(
+    date = "Data esame",
+    pathogen_id = "ID",
+    pathogen_name = "Nome Patogeno",
+    value = "Risultato",
+    intervallo_riferimento = "Intervallo di Riferimento"
+  ) |>
+  cols_align(align = "left", columns = "pathogen_id") |>
+  cols_align(align = "center", columns = "value") |>
+  cols_align("center", "intervallo_riferimento") |> 
+  data_color(
+    columns = value,
+    palette = c("white", "orange", "red"),
+    domain = c(10, 15)
+  ) |>
+  cols_width(
+    pathogen_name ~ pct(40),
+    intervallo_riferimento ~ pct(18),
+    pathogen_id ~ pct(10)
+    )
+```
+
+
+# Confronto con esami precedenti
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+plot_timeline <- function(pathogen, all_pathogens, ...){
+    full_range <- exams |> 
+        filter(pathogen_id %in% all_pathogens) |> 
+        pull(date) |> 
+        range()
+    
+    set <- exams |> 
+        filter(pathogen_id == pathogen) 
+
+    title <- set |> pull(pathogen_name) |> unlist()
+
+    set |> 
+        ggplot(aes(
+            x = date,
+            y = value
+        )) + 
+            geom_line() +
+            geom_point(shape=21, size = 2) +
+            scale_x_date("", limits = full_range, labels = scales::label_date_short()) +
+            scale_y_continuous(
+                "",
+                limits = c(0, max(pull(set, value))), 
+                expand= expand_scale(mult = c(0,0.2), add= c(0, 5))
+            ) +
+            theme_minimal(base_size=12) +
+            labs(title = title) 
+}
+
+id_of_pathogens <- exams |> 
+    filter(exam_id == params$exam_id) |> 
+    pull(pathogen_id)
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#| fig-width: 7
+#| fig-height: 2.5
+for(i in id_of_pathogens){
+    plot_timeline(i, id_of_pathogens) |> plot()
+}
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+dbDisconnect(con, shutdown = TRUE)
+```

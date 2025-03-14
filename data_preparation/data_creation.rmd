@@ -1,0 +1,120 @@
+```{r setup}
+library(duckdb)
+library(duckplyr)
+library(tidyverse)
+```
+
+
+```{r}
+patients_table <- tribble(
+    ~id, ~`first-name`, ~`middle-name`, ~`last-name`, ~`birth-date`,
+    1001, "Mario", NA, "Rossi", "1982-12-20",
+    1002, "Giulia", "Maria", "Bianchi", "1994-03-01"
+)
+
+exams_table <- tribble(
+    ~exam_id, ~patient_id, ~date,
+    102437, 1001, "2024-10-05",
+    102436, 1001, "2024-09-01",
+    102435, 1001, "2024-07-29",
+    102434, 1001, "2024-06-15",
+    102424, 1001, "2024-05-01",
+    102021, 1002, "2024-02-01",
+    102407, 1002, "2024-12-18",
+)
+
+analysis_table <- tribble(
+    ~exam_id, ~pathogen_id, ~value,
+    102436, "001", 20,
+    102435, "001", 30,
+    102434, "001", 25,
+    102437, "001", 15,
+    102436, "002", 20,
+    102435, "002", 50,
+    102434, "002", 240,
+    102437, "003", 15,
+    102437, "002", 10,
+    102424, "001", 50,
+    102424, "002", 205,
+    102021, "001", 200,
+    102407, "001", 30,
+    102021, "002", 20,
+    102407, "002", 120,
+) 
+
+pathogen_table <- tribble(
+    ~pathogen_id, ~pathogen_name, ~intervallo_riferimento, 
+    "001", "Legionella pneumophila", "0 - 5",
+    "002", "Mycoplasma pneumoniae", "10 - 50",
+    "003", "Mycoplasma hominis", "0"
+)
+
+exams_comments <- tribble(
+    ~exam_id, ~comment
+) |> bind_rows(
+    tibble(exam_id = 102437, 
+    comment = "Tutti gli easmi sono regolari buoni. Si riscontra un ottima risposta alla terapia.
+    Raccomandiamo un controllo fra mesi 6 (Luglio 2025) per accertare il continuo andamento positivo.
+
+## Avvertenza
+Per favorire l'assorbimento del farmaco XXX evitare cibi e succhi contenenti pompelmo.")
+) |> bind_rows(
+    tibble(exam_id = 102021, 
+    comment = "Tutti gli easmi sono regolari buoni. Si riscontra un ottima risposta alla terapia.
+    Raccomandiamo un controllo fra mesi 6 (Luglio 2025) per accertare il continuo andamento positivo.
+
+## Avvertenza
+Per favorire l'assorbimento del farmaco XXX evitare cibi e succhi contenenti pompelmo.")
+) 
+    
+```
+
+
+```{r}
+db <- dbConnect(duckdb(), dbdir = "database.duckdb", read_only = FALSE)
+
+dbWriteTable(
+    db,
+    "patients",
+    patients_table,
+    append = FALSE,
+    overwrite = TRUE
+)
+
+dbWriteTable(
+    db,
+    "exams",
+    exams_table,
+    append=FALSE,
+    overwrite = TRUE
+)
+
+dbWriteTable(
+    db,
+    "analysis",
+    analysis_table,
+    append=FALSE,
+    overwrite = TRUE
+)
+
+dbWriteTable(
+    db,
+    "pathogens",
+    pathogen_table,
+    append=FALSE,
+    overwrite = TRUE
+)
+
+dbWriteTable(
+    db,
+    "comments",
+    exams_comments,
+    append = FALSE,
+    overwrite = TRUE
+)
+```
+
+
+```{r}
+dbDisconnect(db, shutdown = TRUE)
+```
